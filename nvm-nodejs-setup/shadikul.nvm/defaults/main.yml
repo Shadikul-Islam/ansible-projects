@@ -1,0 +1,22 @@
+---
+nvm_version: 0.40.1
+# nvm_version: 'latest'
+
+nvm_node_version: v12
+# nvm_node_version: 'latest'
+
+# path config
+nvm_install_path: ~/.nvm
+nvm_shell_init_file: ~/.profile
+
+# force rewrite nvm folder from remove git
+nvm_force_install: false
+
+# allow to skip dependencies installation (for non-root user)
+nvm_install_deps: true
+
+# allow to change git url for use proxy
+nvm_git_repository: https://github.com/nvm-sh/nvm.git
+
+# disable git recursive clone
+nvm_git_recursive: false

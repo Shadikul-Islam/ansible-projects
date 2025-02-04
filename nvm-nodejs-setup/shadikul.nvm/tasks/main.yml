@@ -1,0 +1,19 @@
+---
+- name: Run Debian setup
+  ansible.builtin.import_tasks: setup-debian.yml
+  when: ansible_os_family == "Debian" and nvm_install_deps
+  tags: nvm
+
+- name: Run NVM install
+  ansible.builtin.import_tasks: install_nvm.yml
+  tags: nvm
+
+- name: Run Node.js install
+  ansible.builtin.import_tasks: install_nodejs.yml
+  tags: nvm
+
+- name: Run validation
+  ansible.builtin.import_tasks: validate.yml
+  tags: nvm
+
+

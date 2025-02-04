@@ -1,0 +1,16 @@
+---
+- name: Install Node.js latest
+  ansible.builtin.shell: ". ./nvm.sh && nvm install node"
+  args:
+    chdir: "{{ nvm_install_path }}"
+  register: nvm_install_result
+  changed_when: "'is already installed.' not in nvm_install_result.stderr"
+  when: nvm_node_version == 'latest'
+
+- name: Install Node.js {{ nvm_node_version }}
+  ansible.builtin.shell: "bash -c 'source {{ nvm_install_path }}/nvm.sh && nvm install {{ nvm_node_version }}'"
+  args:
+    chdir: "{{ nvm_install_path }}"
+  register: nvm_install_result
+  changed_when: "'is already installed.' not in nvm_install_result.stderr"
+  when: nvm_node_version != 'latest'
