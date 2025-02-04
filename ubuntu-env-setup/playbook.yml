@@ -1,0 +1,6 @@
+---
+- name: Ubuntu Environment Setup
+  hosts: all
+  become: yes
+  roles:
+    - shadikul.env_setup

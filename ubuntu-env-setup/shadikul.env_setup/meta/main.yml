@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: nvm
+  namespace: shadikul_islam
+  author: Md. Shadikul Islam
+  description: Ubuntu Environment Setup
+  license: BSD
+  min_ansible_version: "2.1"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+  galaxy_tags:
+    - apache
+    - docker
+
+dependencies: []

@@ -1,0 +1,352 @@
+
+#############################################################
+#     Update Package Cache                                  #
+#############################################################
+- name: Update apt package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags:
+    - update_package
+
+#############################################################
+#     Install & Manage Apache2 Packages                     #
+#############################################################
+- name: Check if Apache2 is installed
+  shell: dpkg -l | grep -i apache2
+  register: apache_installed
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - apache2_setup
+
+- name: Install Apache2 if not present
+  apt:
+    name: apache2
+    state: present
+  when: apache_installed.rc != 0
+  tags:
+    - apache2_setup
+
+- name: Check if Apache2 service is masked
+  shell: systemctl is-enabled apache2
+  register: apache_masked
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - apache2_setup
+
+- name: Unmask Apache2 service if masked
+  systemd:
+    name: apache2
+    masked: no
+  when: apache_masked.stdout == 'masked'
+  notify: Restart Apache2
+  tags:
+    - apache2_setup
+
+#############################################################
+#     Check PHP Version                       #
+#############################################################
+
+- name: Check if PHP is installed
+  command: php -v
+  register: php_check
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - php_version_check
+
+- name: Extract installed PHP version
+  set_fact:
+    installed_php_version: "{{ php_check.stdout_lines[0] | regex_search('PHP ([0-9]+\\.[0-9]+)', '\\1') | first | default('not_installed') }}"
+  when: php_check.rc == 0
+  tags:
+    - php_version_check
+
+- name: Debug Installed PHP Version
+  debug:
+    msg: "Installed PHP version is {{ installed_php_version }}"
+  tags:
+    - php_version_check
+
+#############################################################
+#     Install & Configure PHP with Redis & MySQL Extensions #
+#############################################################
+
+- name: Ensure package cache is updated
+  apt:
+    update_cache: yes
+  tags:
+    - php_setup
+
+- name: Install PHP and required extensions
+  apt:
+    name:
+      - php{{ php_version }}
+      - php{{ php_version }}-cli
+      - php{{ php_version }}-common
+      - php{{ php_version }}-mysql
+      - php{{ php_version }}-redis
+      - php{{ php_version }}-mbstring
+      - php{{ php_version }}-xml
+      - php{{ php_version }}-curl
+      - php{{ php_version }}-zip
+    state: present
+  become: yes
+  tags:
+    - php_setup
+
+- name: Verify Redis extension
+  command: php -m | grep -i redis
+  register: redis_extension
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - php_setup
+
+- name: Verify MySQL extension
+  command: php -m | grep -i mysqli
+  register: mysql_extension
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - php_setup
+
+- name: Enable Redis extension if missing
+  lineinfile:
+    path: "/etc/php/{{ php_version }}/apache2/php.ini"
+    line: "extension=redis.so"
+    state: present
+  notify: Restart Apache2
+  when: redis_extension.rc != 0
+  tags:
+    - php_setup
+
+- name: Enable MySQL extension if missing
+  lineinfile:
+    path: "/etc/php/{{ php_version }}/apache2/php.ini"
+    line: "extension=mysqli.so"
+    state: present
+  notify: Restart Apache2
+  when: mysql_extension.rc != 0
+  tags:
+    - php_setup
+
+- name: Restart Apache2 after PHP installation
+  systemd:
+    name: apache2
+    state: restarted
+  tags:
+    - apache2_setup
+    - php_setup
+
+
+#############################################################
+#     Install & Manage Docker Packages                      #
+#############################################################
+- name: Check if Docker is installed
+  shell: which docker
+  register: docker_installed
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - docker_setup
+
+- name: Install required dependencies for Docker
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+  when: docker_installed.rc != 0
+  tags:
+    - docker_setup
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  when: docker_installed.rc != 0
+  tags:
+    - docker_setup
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+  when: docker_installed.rc != 0
+  tags:
+    - docker_setup
+
+- name: Install Docker
+  apt:
+    name: docker-ce
+    state: present
+    update_cache: yes
+  when: docker_installed.rc != 0
+  tags:
+    - docker_setup
+
+- name: Add user to the Docker group (optional)
+  user:
+    name: "{{ username }}"
+    groups: docker
+    append: yes
+  notify: Restart Docker
+  when: docker_installed.rc != 0
+  tags:
+    - docker_setup
+
+
+#############################################################
+#     Install Docker Compose                                #
+#############################################################
+- name: Check if Docker Compose is installed
+  shell: which docker-compose
+  register: docker_compose_installed
+  ignore_errors: yes
+  changed_when: false
+  tags:
+    - docker_compose_setup
+
+- name: Download Docker Compose binary
+  get_url:
+    url: "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64"
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+  when: docker_compose_installed.rc != 0
+  tags:
+    - docker_compose_setup
+
+- name: Verify Docker Compose installation
+  command: docker-compose --version
+  register: docker_compose_version
+  changed_when: false
+  when: docker_compose_installed.rc != 0
+  tags:
+    - docker_compose_setup
+
+- name: Display Docker Compose version
+  debug:
+    msg: "Docker Compose version: {{ docker_compose_version.stdout }}"
+  when: docker_compose_installed.rc != 0
+  tags:
+    - docker_compose_setup
+
+
+#############################################################
+#     Update /etc/hosts File                                #
+#############################################################
+- name: Add Entry to /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "192.168.25.231 uat.myproject.com"
+    state: present
+    create: yes
+  tags:
+    - update_etc_hosts
+
+
+#############################################################
+#     NVM Setup                                       #
+#############################################################
+
+
+#############################################################
+#     Set Permissions and Ownership for Project Directory #
+#############################################################
+
+- name: Change ownership of myprojectnext-frontend directory and its contents
+  file:
+    path: /var/www/html
+    state: directory
+    recurse: yes
+    owner: "{{ username }}"
+    group: "{{ username }}"
+  tags:
+    - permission_setup
+
+
+#############################################################
+#     Rename Directories                                       #
+#############################################################
+
+- name: Rename myprojectnext-frontend to frontend
+  command: mv /var/www/html/myprojectnext-frontend /var/www/html/frontend
+  args:
+    creates: /var/www/html/frontend
+  tags:
+    - rename_directories
+
+- name: Rename myprojectnext-backend to backend
+  command: mv /var/www/html/myprojectnext-backend /var/www/html/core-service
+  args:
+    creates: /var/www/html/core-service
+  tags:
+    - rename_directories
+
+
+#############################################################
+#     Frontend Setup                                       #
+#############################################################
+
+- name: Update '_url' in config.js
+  replace:
+    path: /var/www/html/frontend/src/shared/common/config.js
+    regexp: '^let _url = "http://uat.myproject.com/";$'
+    replace: 'let _url = "http://{{ ipaddress }}/";'
+  tags:
+    - frontend_setup
+
+
+#############################################################
+#     Backend Setup                                       #
+#############################################################
+
+- name: Delete database-old.php (if exists, delete first)
+  ansible.builtin.file:
+    path: /var/www/html/core-service/application/config/database-old.php
+    state: absent
+  tags:
+    - backend_setup
+
+- name: Rename database.php to database-old.php
+  ansible.builtin.command:
+    cmd: mv /var/www/html/core-service/application/config/database.php /var/www/html/core-service/application/config/database-old.php
+  tags:
+    - backend_setup
+
+- name: Rename REST_Controller.php to REST_Controller-old.php (if exists, delete first)
+  ansible.builtin.file:
+    path: /var/www/html/core-service/application/libraries/REST_Controller-old.php
+    state: absent
+  tags:
+    - backend_setup
+
+- name: Rename REST_Controller.php to REST_Controller.php.old
+  ansible.builtin.command:
+    cmd: mv /var/www/html/core-service/application/libraries/REST_Controller.php /var/www/html/core-service/application/libraries/REST_Controller-old.php
+  tags:
+    - backend_setup
+
+- name: Copy database.php from Ansible host to remote server
+  ansible.builtin.copy:
+    src: /var/www/html/local-env-setup-files/database.php
+    dest: /var/www/html/core-service/application/config/database.php
+    owner: "{{ username }}"
+    group: "{{ username }}"
+    mode: '0775'
+  tags:
+    - backend_setup
+
+- name: Copy REST_Controller.php from Ansible host to remote server
+  ansible.builtin.copy:
+    src: /var/www/html/local-env-setup-files/REST_Controller.php
+    dest: /var/www/html/core-service/application/libraries/REST_Controller.php
+  tags:
+    - backend_setup
